@@ -2,10 +2,11 @@
 	"name": "datatables.net/editor-php",
 	"description": "PHP server-side libraries for Editor",
 	"type": "library",
-	"require": {
-		"php": ">=5.4.0 <9"
-	},
-	"keywords": ["DataTables","jQuery","Editor"],
+	"keywords": [
+		"DataTables",
+		"jQuery",
+		"Editor"
+	],
 	"homepage": "https://editor.datatables.net",
 	"authors": [
 		{
@@ -13,15 +14,22 @@
 			"homepage": "https://datatables.net"
 		}
 	],
+	"require": {
+		"php": ">=5.4",
+		"ext-pdo": "*",
+		"doctrine/dbal": "^4.2",
+		"vanilla/htmlawed": "^2.2"
+	},
 	"require-dev": {
 		"friendsofphp/php-cs-fixer": "~3.41.0",
 		"phpstan/extension-installer": "^1.1",
 		"phpstan/phpstan": "~1.11",
-		"phpstan/phpstan-deprecation-rules": "^1.0"
+		"phpstan/phpstan-deprecation-rules": "^1.0",
+		"symfony/var-dumper": "^7.0"
 	},
 	"autoload": {
 		"psr-4": {
-			"DataTables\\": ""
+			"DataTables\\": "src"
 		}
 	},
 	"license": "MIT",

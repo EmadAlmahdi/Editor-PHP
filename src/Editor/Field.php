@@ -18,7 +18,7 @@ use DataTables\Database;
 use DataTables\Database\Query;
 use DataTables\Editor;
 use DataTables\Ext;
-use DataTables\HtmLawed\HtmLawedVanillaWrapper;
+use Htmlawed;
 
 /**
  * Field definitions for the DataTables Editor.
@@ -818,7 +818,7 @@ class Field extends Ext
 			foreach ($val as $individual) {
 				$res[] = $xss ?
 					$xss($individual) :
-					HtmLawedVanillaWrapper::filter($individual);
+					Htmlawed::filter($individual);
 			}
 
 			return $res;
@@ -826,7 +826,7 @@ class Field extends Ext
 
 		return $xss ?
 			$xss($val) :
-			HtmLawedVanillaWrapper::filter($val);
+			Htmlawed::filter($val);
 	}
 
 	/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *

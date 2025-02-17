@@ -1,5 +1,2 @@
-/vendor/
-/composer.lock
-
-docs
-.phpdoc
+vendor
+composer.lock
