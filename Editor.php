@@ -303,69 +303,21 @@ class Editor extends Ext
 	}
 
 	/**
-	 * Get / set field instance.
+	 * Set field instances.
 	 *
-	 * The list of fields designates which columns in the table that Editor will work
-	 * with (both get and set).
+	 * Assigns one or more {@see Field} instances to the editor, replacing any existing fields.
 	 *
-	 * @param Field|string ...$_ This parameter effects the return value of the
-	 *                           function:
+	 * @param Field ...$field One or more instances of the {@see Field} class to be assigned to the editor.
 	 *
-	 *      * `null` - Get an array of all fields assigned to the instance
-	 * 	    * `string` - Get a specific field instance whose 'name' matches the
-	 *           field passed in
-	 *      * {@see Field} - Add a field to the instance's list of fields. This
-	 *           can be as many fields as required (i.e. multiple arguments)
-	 *      * `array` - An array of {@see Field} instances to add to the list
-	 *        of fields.
-	 *
-	 * @return ($_ is null ? ($_ is string ? Field : Field[]) : $this) The selected field, an array of fields, depending on the input parameter.
+	 * @return $this The current instance of the editor for method chaining.
 	 *
 	 * @see {@see Field} for field documentation.
 	 */
-	public function field($_ = null)
+	public function setFields(Field ...$field): Editor
 	{
-		$args = func_get_args();
+		$this->_fields = $field;
 
-		if (is_string($_)) {
-			for ($i = 0, $ien = count($this->_fields); $i < $ien; ++$i) {
-				if ($this->_fields[$i]->name() === $_) {
-					return $this->_fields[$i];
-				}
-			}
-
-			throw new \Exception('Unknown field: ' . $_);
-		}
-
-		if ($_ !== null && !is_array($_)) {
-			$_ = $args;
-		}
-
-		return $this->_getSet($this->_fields, $_, true);
-	}
-
-	/**
-	 * Get / set field instances.
-	 *
-	 * An alias of {@see field}, for convenience.
-	 *
-	 * @param Field|Field[] ...$_ Instances of the {@see Field} class, given as a single
-	 *                            instance of {@see Field}, an array of {@see Field} instances, or multiple
-	 *                            {@see Field} instance parameters for the function.
-	 *
-	 * @return ($_ is null ? Field[] : $this) Array of fields.
-	 *
-	 * @see {@see Field} for field documentation.
-	 */
-	public function fields($_ = null)
-	{
-		$args = func_get_args();
-
-		if ($_ !== null && !is_array($_)) {
-			$_ = $args;
-		}
-
-		return $this->_getSet($this->_fields, $_, true);
+		return $this;
 	}
 
 	/**
