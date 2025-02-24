@@ -14,10 +14,29 @@ $db = new Database([
     'pass' => 'root',
     'host' => 'localhost',
     'db' => 'dt'
-]); 
+]);
+
+// Antag att $db är en instans av din klass som innehåller update()-metoden
+
+// $table = 'users_test2';
+// $set = ['name' => "Emadov!"];
+// $where = ['id' => 1];
+
+// $updatedRows = $db->update($table, $set, $where);
+
+// if ($updatedRows > 0) {
+//     echo "User updated successfully!";
+// } else {
+//     echo "No user found to update.";
+// }
+
+
+// dd($db->selectDistinct("users_test1", 'name'));
+
+
 
 // Build our Editor instance and process the data coming from _POST
-Editor::inst($db, 'datatables_demo')
+new Editor($db, 'datatables_demo')
     ->fields(
         Field::inst('first_name')
             ->validator(Validate::notEmpty(
@@ -51,3 +70,4 @@ Editor::inst($db, 'datatables_demo')
     ->debug(true)
     ->process($_POST)
     ->json(true, JSON_PRETTY_PRINT);
+

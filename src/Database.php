@@ -1,4 +1,4 @@
-<?php
+<?php declare(strict_types=1);
 
 /**
  * DataTables PHP libraries.
@@ -15,7 +15,10 @@
 namespace DataTables;
 
 use DataTables\Database\Query;
-use DataTables\Database\Result;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Query\QueryBuilder;
+use Doctrine\DBAL\Result;
 
 /**
  * DataTables Database connection object.
@@ -49,7 +52,7 @@ class Database
 	 *                                         ]
 	 *                                         ```
 	 */
-	public function __construct($opts)
+	public function __construct(array $opts)
 	{
 		$types = ['Mysql', 'Oracle', 'Postgres', 'Sqlite', 'Sqlserver', 'Db2', 'Firebird'];
 
@@ -65,7 +68,17 @@ class Database
 		$this->_dbResource = isset($opts['pdo']) ?
 			$opts['pdo'] :
 			call_user_func($this->query_driver . '::connect', $opts);
+
+		$this->connection = DriverManager::getConnection([
+			'dbname' => $opts['db'],
+			'user' => $opts['user'],
+			'password' => $opts['pass'],
+			'host' => $opts['host'],
+			'driver' => sprintf("pdo_%s", strtolower($opts['type']))
+		]);
 	}
+
+	private readonly Connection $connection;
 
 	/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 	 * Private properties
@@ -90,22 +103,24 @@ class Database
 	 * Determine if there is any data in the table that matches the query
 	 * condition.
 	 *
-	 * @param string|string[] $table Table name(s) to act upon.
-	 * @param array           $where Where condition for what to select - see {@see
-	 *                               Query->where()}.
+	 * @param string		  $table Table name(s) to act upon.
+	 * @param array           $where Where condition for what to select.
 	 *
 	 * @return bool Boolean flag - true if there were rows
 	 */
-	public function any($table, $where = null)
+	public function any(string $table, array $where = []): bool
 	{
-		$res = $this->query('select')
-			->table($table)
-			->get('*')
-			->where($where)
-			->limit(1)
-			->exec();
+		$qb = $this->connection->createQueryBuilder();
+		$qb->select('*')
+			->from($table)
+			->setMaxResults(1);
 
-		return $res->count() > 0;
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ":$column"))
+				->setParameter($column, $value);
+		}
+
+		return (bool) $qb->executeQuery()->fetchOne();
 	}
 
 	/**
@@ -115,9 +130,9 @@ class Database
 	 *
 	 * @return $this
 	 */
-	public function commit()
+	public function commit(): static
 	{
-		call_user_func($this->query_driver . '::commit', $this->_dbResource);
+		$this->connection->commit();
 
 		return $this;
 	}
@@ -168,80 +183,72 @@ class Database
 	/**
 	 * Perform a delete query on a table.
 	 *
-	 * This is a short cut method that creates an update query and then uses
-	 * the query('delete'), table, where and exec methods of the query.
+	 * @param string $table Table name to act upon.
+	 * @param array  $where Where condition for what to delete.
 	 *
-	 * @param string|string[] $table Table name(s) to act upon.
-	 * @param array           $where Where condition for what to delete - see {@see
-	 *                               Query->where()}.
-	 *
-	 * @return Result
+	 * @return int Number of affected rows.
 	 */
-	public function delete($table, $where = null)
+	public function delete(string $table, array $where = []): int|string
 	{
-		return $this->query('delete')
-			->table($table)
-			->where($where)
-			->exec();
+		$qb = $this->connection->createQueryBuilder();
+		$qb->delete($table);
+
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ':' . $column))
+				->setParameter($column, $value);
+		}
+
+		return $qb->executeStatement();
 	}
 
 	/**
 	 * Insert data into a table.
 	 *
-	 * This is a short cut method that creates an update query and then uses
-	 * the query('insert'), table, set and exec methods of the query.
+	 * @param string $table Table name to act upon.
+	 * @param array  $set   Field names and values to set.
+	 * @param string $pkey  Primary key column name (optional).
 	 *
-	 * @param string|string[] $table Table name(s) to act upon.
-	 * @param array           $set   Field names and values to set - see {@see
-	 *                               Query->set()}.
-	 * @param string|array    $pkey  Primary key column names (this is an array for
-	 *                               forwards compt, although only the first item in the array is actually
-	 *                               used). This doesn't need to be set, but it must be if you want to use
-	 *                               the `Result->insertId()` method.
-	 *
-	 * @return Result
+	 * @return int Last inserted ID if a primary key is provided, otherwise affected rows count.
 	 */
 	public function insert($table, $set, $pkey = '')
 	{
-		return $this->query('insert')
-			->pkey($pkey)
-			->table($table)
-			->set($set)
-			->exec();
+		$qb = $this->connection->createQueryBuilder();
+		$qb->insert($table);
+
+		foreach ($set as $column => $value) {
+			$qb->setValue($column, ":set_$column")
+				->setParameter("set_$column", $value);
+		}
+
+		$qb->executeStatement();
+
+		return $pkey ? $this->connection->lastInsertId() : $qb->executeStatement();
 	}
 
 	/**
-	 * Update or Insert data. When doing an insert, the where condition is
-	 * added as a set field.
+	 * Update or Insert data.
 	 *
-	 * @param string|string[] $table Table name(s) to act upon.
-	 * @param array           $set   Field names and values to set - see {@see
-	 *                               Query->set()}.
-	 * @param array           $where Where condition for what to update - see {@see
-	 *                               Query->where()}.
-	 * @param string|array    $pkey  Primary key column names (this is an array for
-	 *                               forwards compt, although only the first item in the array is actually
-	 *                               used). This doesn't need to be set, but it must be if you want to use
-	 *                               the `Result->insertId()` method. Only used if an insert is performed.
+	 * @param string $table Table name to act upon.
+	 * @param array  $set   Field names and values to set.
+	 * @param array  $where Where condition for what to update.
+	 * @param string $pkey  Primary key column name (optional).
 	 *
-	 * @return Result
+	 * @return int Affected rows count.
 	 */
-	public function push($table, $set, $where = null, $pkey = '')
+	public function push($table, $set, $where = [], $pkey = '')
 	{
-		$selectColumn = '*';
+		$qb = $this->connection->createQueryBuilder();
+		$qb->select('*')->from($table);
 
-		if ($pkey) {
-			$selectColumn = is_array($pkey) ?
-				$pkey[0] :
-				$pkey;
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ':where_' . $column))
+				->setParameter('where_' . $column, $value);
 		}
 
-		// Update or insert
-		if ($this->select($table, $selectColumn, $where)->count() > 0) {
+		if (!empty($qb->executeQuery()->fetchAssociative())) {
 			return $this->update($table, $set, $where);
 		}
 
-		// Add the where condition to the values to set
 		foreach ($where as $key => $value) {
 			if (!isset($set[$key])) {
 				$set[$key] = $value;
@@ -259,45 +266,28 @@ class Database
 	 *
 	 * @return Query
 	 */
-	public function query($type, $table = null)
+	public function query($type, $table = null): Query
 	{
 		return new $this->query_driver($this, $type, $table);
 	}
 
 	/**
-	 * Quote a string for a quote. Note you should generally use a bind!
+	 * Create a QueryBuilder object for a raw SQL query.
+	 * You must call `executeQuery()` or `executeStatement()` manually.
 	 *
-	 * @param string $val  Value to quote
-	 * @param int    $type Value type
-	 *
-	 * @return string
-	 */
-	public function quote($val, $type = \PDO::PARAM_STR)
-	{
-		return $this->_dbResource->quote($val, $type);
-	}
-
-	/**
-	 * Create a `Query` object that will execute a custom SQL query. This is
-	 * similar to the `sql` method, but in this case you must call the `exec()`
-	 * method of the returned `Query` object manually. This can be useful if you
-	 * wish to bind parameters using the query `bind` method to ensure data is
-	 * properly escaped.
-	 *
-	 * @return Query
+	 * @return QueryBuilder
 	 *
 	 * @example
-	 *    Safely escape user input
+	 *    Safely escape user input:
 	 *    ```php
-	 *    $db
-	 *      ->raw()
-	 *      ->bind( ':date', $_POST['date'] )
-	 *      ->exec( 'SELECT * FROM staff where date < :date' );
+	 *    $db->raw()
+	 *       ->setParameter(':date', $_POST['date'])
+	 *       ->executeQuery('SELECT * FROM staff WHERE date < :date');
 	 *    ```
 	 */
-	public function raw()
+	public function raw(): QueryBuilder
 	{
-		return $this->query('raw');
+		return $this->connection->createQueryBuilder();
 	}
 
 	/**
@@ -317,9 +307,9 @@ class Database
 	 *
 	 * @return $this
 	 */
-	public function rollback()
+	public function rollback(): static
 	{
-		call_user_func($this->query_driver . '::rollback', $this->_dbResource);
+		$this->connection->rollBack();
 
 		return $this;
 	}
@@ -327,85 +317,70 @@ class Database
 	/**
 	 * Select data from a table.
 	 *
-	 * This is a short cut method that creates an update query and then uses
-	 * the query('select'), table, get, where and exec methods of the query.
+	 * @param string       $table   Table name to act upon.
+	 * @param string|array $field   Fields to get from the table.
+	 * @param array        $where   Where condition for what to select.
+	 * @param array        $orderBy Order condition.
 	 *
-	 * @param string|string[] $table   Table name(s) to act upon.
-	 * @param string|array    $field   Fields to get from the table(s) - see {@see
-	 *                                 Query->get()}.
-	 * @param array           $where   Where condition for what to select - see {@see
-	 *                                 Query->where()}.
-	 * @param array           $orderBy Order condition - see {@see
-	 *                                 Query->order()}.
-	 *
-	 * @return Result
+	 * @return array The selected rows.
 	 */
-	public function select($table, $field = '*', $where = null, $orderBy = null)
+	public function select($table, $field = '*', $where = [], $orderBy = [])
 	{
-		return $this->query('select')
-			->table($table)
-			->get($field)
-			->where($where)
-			->order($orderBy)
-			->exec();
+		$qb = $this->connection->createQueryBuilder();
+		$qb->select(is_array($field) ? implode(',', $field) : $field)
+			->from($table);
+
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ':where_' . $column))
+				->setParameter('where_' . $column, $value);
+		}
+
+		foreach ($orderBy as $column => $direction) {
+			$qb->addOrderBy($column, $direction);
+		}
+
+		return $qb->executeQuery()->fetchAllAssociative();
 	}
 
 	/**
 	 * Select distinct data from a table.
 	 *
-	 * This is a short cut method that creates an update query and then uses the
-	 * query('select'), distinct ,table, get, where and exec methods of the
-	 * query.
+	 * @param string       $table   Table name to act upon.
+	 * @param string|array $field   Fields to get from the table.
+	 * @param array        $where   Where condition for what to select.
+	 * @param array        $orderBy Order condition.
 	 *
-	 * @param string|string[] $table   Table name(s) to act upon.
-	 * @param string|array    $field   Fields to get from the table(s) - see {@see
-	 *                                 Query->get()}.
-	 * @param array           $where   Where condition for what to select - see {@see
-	 *                                 Query->where()}.
-	 * @param array           $orderBy Order condition - see {@see
-	 *                                 Query->order()}.
-	 *
-	 * @return Result
+	 * @return array The selected rows.
 	 */
-	public function selectDistinct($table, $field = '*', $where = null, $orderBy = null)
+	public function selectDistinct(string $table, string|array $field = '*', array $where = [], array $orderBy = []): array
 	{
-		return $this->query('select')
-			->table($table)
+		$qb = $this->connection->createQueryBuilder();
+		$qb->select(is_array($field) ? implode(',', $field) : $field)
 			->distinct(true)
-			->get($field)
-			->where($where)
-			->order($orderBy)
-			->exec();
+			->from($table);
+
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ":$column"))
+				->setParameter($column, $value);
+		}
+
+		foreach ($orderBy as $column => $direction) {
+			$qb->addOrderBy($column, $direction);
+		}
+
+		return $qb->executeQuery()->fetchAllAssociative();
 	}
 
 	/**
-	 * Execute an raw SQL query - i.e. give the method your own SQL, rather
-	 * than having the Database classes building it for you.
+	 * Execute a raw SQL query.
 	 *
-	 * This method will execute the given SQL immediately. Use the `raw()`
-	 * method if you need the ability to add bound parameters.
+	 * @param string $sql SQL string to execute.
 	 *
-	 * @param string $sql SQL string to execute (only if _type is 'raw').
-	 *
-	 * @return Result
-	 *
-	 * @example
-	 *    Basic select
-	 *    ```php
-	 *    $result = $db->sql( 'SELECT * FROM myTable;' );
-	 *    ```
-	 * @example
-	 *    Set the character set of the connection
-	 *    ```php
-	 *    $db->sql("SET character_set_client=utf8");
-	 *    $db->sql("SET character_set_connection=utf8");
-	 *    $db->sql("SET character_set_results=utf8");
-	 *    ```
+	 * @return Result The query result.
 	 */
-	public function sql($sql)
+	public function sql(string $sql): Result
 	{
-		return $this->query('raw')
-			->exec($sql);
+		return $this->connection->executeQuery($sql);
 	}
 
 	/**
@@ -415,9 +390,9 @@ class Database
 	 *
 	 * @return $this
 	 */
-	public function transaction()
+	public function transaction(): static
 	{
-		call_user_func($this->query_driver . '::transaction', $this->_dbResource);
+		$this->connection->beginTransaction();
 
 		return $this;
 	}
@@ -431,26 +406,30 @@ class Database
 	}
 
 	/**
-	 * Update data.
+	 * Update data in a table.
 	 *
-	 * This is a short cut method that creates an update query and then uses
-	 * the query('update'), table, set, where and exec methods of the query.
+	 * @param string $table Table name to act upon.
+	 * @param array  $set   Field names and values to update.
+	 * @param array  $where Where condition for what to update.
 	 *
-	 * @param string|string[] $table Table name(s) to act upon.
-	 * @param array           $set   Field names and values to set - see {@see
-	 *                               Query->set()}.
-	 * @param array           $where Where condition for what to update - see {@see
-	 *                               Query->where()}.
-	 *
-	 * @return Result
+	 * @return int Number of affected rows.
 	 */
-	public function update($table, $set = null, $where = null)
+	public function update($table, $set = [], $where = []): int|string
 	{
-		return $this->query('update')
-			->table($table)
-			->set($set)
-			->where($where)
-			->exec();
+		$qb = $this->connection->createQueryBuilder();
+		$qb->update($table);
+
+		foreach ($set as $column => $value) {
+			$qb->set($column, ":set_$column")
+				->setParameter("set_$column", $value);
+		}
+
+		foreach ($where as $column => $value) {
+			$qb->andWhere($qb->expr()->eq($column, ":where_$column"))
+				->setParameter("where_$column", $value);
+		}
+
+		return $qb->executeStatement();
 	}
 
 	/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
